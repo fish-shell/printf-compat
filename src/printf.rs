@@ -1,13 +1,12 @@
 use crate::args::{Arg, ArgList};
 use crate::locale::{Locale, C_LOCALE};
-use crate::output::wide_write;
-use crate::{wstr, WString};
+use crate::output::{wide_write, WideWrite};
+use crate::wstr;
 
 /// The sprintf function entry points. Prefer to use the macros below.
-pub fn sprintf_locale(fmt: &wstr, locale: &Locale, args: &[Arg]) -> WString {
-    let mut s = WString::new();
+pub fn sprintf_locale<T: WideWrite>(target: &mut T, fmt: &wstr, locale: &Locale, args: &[Arg]) {
     let mut arglist = ArgList::new(args);
-    let res = crate::parser::format(fmt, &mut arglist, wide_write(&mut s, locale));
+    let res = crate::parser::format(fmt, &mut arglist, wide_write(target, locale));
     if res.is_err() {
         panic!(
             "sprintf reported error \"{}\" with format string: {}",
@@ -22,11 +21,10 @@ pub fn sprintf_locale(fmt: &wstr, locale: &Locale, args: &[Arg]) -> WString {
             fmt
         );
     }
-    s
 }
 
-pub fn sprintf_c_locale(fmt: &wstr, args: &[Arg]) -> WString {
-    sprintf_locale(fmt, &C_LOCALE, args)
+pub fn sprintf_c_locale<T: WideWrite>(target: &mut T, fmt: &wstr, args: &[Arg]) {
+    sprintf_locale(target, fmt, &C_LOCALE, args)
 }
 
 /// The basic entry point. Accepts a format string as a &wstr, and a list of arguments.
@@ -34,6 +32,7 @@ pub fn sprintf_c_locale(fmt: &wstr, args: &[Arg]) -> WString {
 macro_rules! sprintf {
     // Variant which allows a string literal.
     (
+        => $target:expr, // target string
         $fmt:literal, // format string
         $($arg:expr),* // arguments
         $(,)? // optional trailing comma
@@ -41,6 +40,7 @@ macro_rules! sprintf {
         {
             use $crate::args::ToArg;
             $crate::printf::sprintf_c_locale(
+                $target,
                 widestring::utf32str!($fmt),
                 &[$($arg.to_arg()),*]
             )
@@ -49,6 +49,7 @@ macro_rules! sprintf {
 
     // Variant which allows a runtime format string, which must be of type &wstr.
     (
+        => $target:expr, // target string
         $fmt:expr, // format string
         $($arg:expr),* // arguments
         $(,)? // optional trailing comma
@@ -56,9 +57,26 @@ macro_rules! sprintf {
         {
             use $crate::args::ToArg;
             $crate::printf::sprintf_c_locale(
+                $target,
                 $fmt,
                 &[$($arg.to_arg()),*]
             )
+        }
+    };
+
+    // Versions of the above which return a new string
+    ($fmt:literal, $($arg:expr),* $(,)?) => {
+        {
+            let mut target = widestring::Utf32String::new();
+            $crate::sprintf!(=> &mut target, $fmt, $($arg),*);
+            target
+        }
+    };
+    ($fmt:expr, $($arg:expr),* $(,)?) => {
+        {
+            let mut target = widestring::Utf32String::new();
+            $crate::sprintf!(=> &mut target, $fmt, $($arg),*);
+            target
         }
     };
 }
